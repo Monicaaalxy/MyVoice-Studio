@@ -220,6 +220,7 @@ function initializeApp() {
     if (savedTheme === 'light') {
         document.body.classList.add('light-mode');
     }
+    syncThemeColorMeta();
 }
 
 // ===== Owner Authentication =====
@@ -322,6 +323,15 @@ function toggleTheme() {
     document.body.classList.toggle('light-mode');
     const theme = document.body.classList.contains('light-mode') ? 'light' : 'dark';
     localStorage.setItem('theme', theme);
+    syncThemeColorMeta();
+}
+
+function syncThemeColorMeta() {
+    const meta = document.querySelector('meta[name=\"theme-color\"]');
+    if (!meta) return;
+    const isLight = document.body.classList.contains('light-mode');
+    // Match our gradients so mobile browser UI (address bar) also looks consistent.
+    meta.setAttribute('content', isLight ? '#fff5f9' : '#1e3a8a');
 }
 
 function showView(view) {
