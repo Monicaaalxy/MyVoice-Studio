@@ -353,18 +353,10 @@ function routeFromLocation() {
 }
 
 // ===== Audio File Selection =====
-const MAX_AUDIO_SIZE_MB = 4; // Max 4MB to stay under Netlify's 6MB payload limit after base64
-
 function handleAudioSelect(e) {
     const file = e.target.files[0];
     if (file && file.type.includes('audio')) {
-        // Check file size
         const fileSizeMB = file.size / (1024 * 1024);
-        if (fileSizeMB > MAX_AUDIO_SIZE_MB) {
-            alert(`Audio file is too large (${fileSizeMB.toFixed(1)}MB). Maximum size is ${MAX_AUDIO_SIZE_MB}MB. Please compress or trim your audio file.`);
-            e.target.value = '';
-            return;
-        }
         currentAudioFile = file;
         document.getElementById('audioFileName').textContent = `${file.name} (${fileSizeMB.toFixed(1)}MB)`;
         document.getElementById('songName').value = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
@@ -447,35 +439,26 @@ async function confirmUpload() {
     confirmBtn.disabled = true;
     
     try {
-        // Convert files to base64 for API
-        const audioData = await fileToBase64(currentAudioFile);
-        let coverData = null;
-        let coverUrl = null;
-        let coverType = 'random';
-
+        // Use FormData for file uploads (no size limit)
+        const formData = new FormData();
+        formData.append('name', songName);
+        formData.append('audio', currentAudioFile);
+        
         if (currentCoverFile) {
-            coverData = await fileToBase64(currentCoverFile);
-            coverType = 'uploaded';
+            formData.append('cover', currentCoverFile);
+            formData.append('coverType', 'uploaded');
         } else {
-            coverUrl = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
+            const randomCover = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
+            formData.append('coverUrl', randomCover);
+            formData.append('coverType', 'random');
         }
 
-        const res = await fetch('/api/demos', {
+        const res = await fetch('/api/upload-demo', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
                 'X-Owner-Password': ownerPassword
             },
-            body: JSON.stringify({
-                demo: {
-                    name: songName,
-                    audioFile: currentAudioFile.name,
-                    coverUrl: coverUrl,
-                    coverType: coverType,
-                    audioData: audioData,
-                    coverData: coverData
-                }
-            })
+            body: formData
         });
 
         if (!res.ok) {
@@ -484,13 +467,7 @@ async function confirmUpload() {
                 const err = await res.json();
                 errorMsg = err.error || errorMsg;
             } catch {
-                // Response wasn't JSON, likely a server error
-                const text = await res.text();
-                if (text.includes('Too Large') || res.status === 413) {
-                    errorMsg = 'File too large. Please use an audio file under 4MB.';
-                } else {
-                    errorMsg = `Server error (${res.status}). Try a smaller file.`;
-                }
+                errorMsg = `Server error (${res.status})`;
             }
             throw new Error(errorMsg);
         }
@@ -538,10 +515,14 @@ function renderDemos(filteredDemos = null) {
     }
     
     emptyState.classList.remove('show');
-    demoGrid.innerHTML = demosToRender.map(demo => `
+    demoGrid.innerHTML = demosToRender.map(demo => {
+        const coverSrc = demo.coverType === 'uploaded' 
+            ? `/api/demo-audio?id=${demo.id}&type=cover`
+            : (demo.coverUrl || fallbackCoverFor(demo.name));
+        return `
         <div class="demo-card" data-id="${demo.id}">
             <div class="demo-cover-container">
-                <img src="${demo.coverUrl || fallbackCoverFor(demo.name)}" alt="${demo.name}" class="demo-cover">
+                <img src="${coverSrc}" alt="${demo.name}" class="demo-cover">
                 ${isOwner ? `
                 <div class="demo-actions">
                     <button class="demo-action-btn edit-btn" data-action="edit" data-id="${demo.id}" 
@@ -566,7 +547,8 @@ function renderDemos(filteredDemos = null) {
             <div class="demo-name">${demo.name}</div>
             <div class="demo-info">${formatDate(demo.uploadDate)}</div>
         </div>
-    `).join('');
+    `;
+    }).join('');
     
     // Add click listeners
     document.querySelectorAll('.demo-cover-container').forEach(container => {
@@ -681,25 +663,28 @@ async function confirmEdit() {
         return;
     }
     
-    const updates = { name: newName };
-    
-    // Update cover if changed
-    if (currentCoverFile === 'reshuffle') {
-        updates.coverUrl = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
-        updates.coverType = 'random';
-    } else if (currentCoverFile && currentCoverFile !== 'reshuffle') {
-        updates.coverData = await fileToBase64(currentCoverFile);
-        updates.coverType = 'uploaded';
-    }
-    
     try {
-        const res = await fetch('/api/demos', {
-            method: 'PUT',
+        // Use FormData for file uploads
+        const formData = new FormData();
+        formData.append('id', editingDemoId.toString());
+        formData.append('name', newName);
+        
+        // Update cover if changed
+        if (currentCoverFile === 'reshuffle') {
+            const randomCover = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
+            formData.append('coverUrl', randomCover);
+            formData.append('coverType', 'random');
+        } else if (currentCoverFile && currentCoverFile !== 'reshuffle') {
+            formData.append('cover', currentCoverFile);
+            formData.append('coverType', 'uploaded');
+        }
+        
+        const res = await fetch('/api/update-demo', {
+            method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
                 'X-Owner-Password': ownerPassword
             },
-            body: JSON.stringify({ id: editingDemoId, updates })
+            body: formData
         });
 
         if (!res.ok) {
@@ -1024,26 +1009,18 @@ async function loadTrackIntoPlayer(autoplay) {
 
     const cover = document.getElementById('playerCover');
     if (cover) {
-        cover.src = demo.coverUrl || fallbackCoverFor(title);
+        const coverSrc = demo.coverType === 'uploaded' 
+            ? `/api/demo-audio?id=${demo.id}&type=cover`
+            : (demo.coverUrl || fallbackCoverFor(title));
+        cover.src = coverSrc;
     }
 
     const audio = document.getElementById('audioEl');
     if (audio) {
         audio.loop = !!playerState.repeat;
         
-        // Load audio from API
-        if (!demo.audioUrl) {
-            try {
-                const audioData = await loadDemoAudio(demo.id);
-                if (audioData) {
-                    demo.audioUrl = `data:audio/mpeg;base64,${audioData}`;
-                }
-            } catch (e) {
-                console.error('Failed to load audio:', e);
-            }
-        }
-        
-        audio.src = demo.audioUrl || '';
+        // Use direct blob URL for audio
+        audio.src = `/api/demo-audio?id=${demo.id}&type=audio`;
         audio.load();
         document.getElementById('elapsedTime').textContent = '0:00';
         document.getElementById('totalTime').textContent = '0:00';
