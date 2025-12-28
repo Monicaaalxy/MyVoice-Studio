@@ -36,13 +36,15 @@ export default async (req: Request, context: Context) => {
 
   try {
     const formData = await req.formData();
-    const id = parseInt(formData.get("id") as string);
+    const rawId = formData.get("id");
+    const idStr = rawId == null ? "" : String(rawId);
+    const idNum = Number(idStr);
     const name = formData.get("name") as string | null;
     const coverFile = formData.get("cover") as File | null;
     const coverUrl = formData.get("coverUrl") as string | null;
     const coverType = formData.get("coverType") as "uploaded" | "random" | null;
 
-    if (!id) {
+    if (!idStr) {
       return new Response(
         JSON.stringify({ error: "Demo ID is required" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
@@ -56,7 +58,7 @@ export default async (req: Request, context: Context) => {
     const demosJson = await demoStore.get("all-demos", { type: "json" });
     const demos: Demo[] = demosJson || [];
 
-    const index = demos.findIndex((d) => d.id === id);
+    const index = demos.findIndex((d: any) => String(d?.id) === idStr);
     if (index === -1) {
       return new Response(
         JSON.stringify({ error: "Demo not found" }),
@@ -67,12 +69,17 @@ export default async (req: Request, context: Context) => {
     // Update demo fields
     if (name) demos[index].name = name;
     if (coverType) demos[index].coverType = coverType;
-    if (coverUrl !== null) demos[index].coverUrl = coverUrl;
+    if (coverType === "random") {
+      demos[index].coverUrl = coverUrl || null;
+    } else if (coverUrl !== null) {
+      demos[index].coverUrl = coverUrl;
+    }
 
     // Store new cover file if uploaded
     if (coverFile) {
       const coverBuffer = await coverFile.arrayBuffer();
-      await audioStore.set(`cover-${id}`, coverBuffer);
+      const coverBlob = new Blob([coverBuffer], { type: coverFile.type || "image/jpeg" });
+      await audioStore.set(`cover-${idStr}`, coverBlob);
       demos[index].coverType = "uploaded";
       demos[index].coverUrl = null;
     }

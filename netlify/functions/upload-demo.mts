@@ -36,11 +36,16 @@ export default async (req: Request, context: Context) => {
 
   try {
     const formData = await req.formData();
-    const name = formData.get("name") as string;
-    const audioFile = formData.get("audio") as File;
-    const coverFile = formData.get("cover") as File | null;
-    const coverUrl = formData.get("coverUrl") as string | null;
-    const coverType = formData.get("coverType") as "uploaded" | "random";
+    const name = String(formData.get("name") || "").trim();
+    const audioPart = formData.get("audio");
+    const coverPart = formData.get("cover");
+    const coverUrl = formData.get("coverUrl") ? String(formData.get("coverUrl")) : null;
+    const requestedCoverType = formData.get("coverType") ? String(formData.get("coverType")) : null;
+
+    const audioFile = audioPart instanceof File ? audioPart : null;
+    const coverFile = coverPart instanceof File ? coverPart : null;
+    const coverType: "uploaded" | "random" =
+      requestedCoverType === "uploaded" && coverFile ? "uploaded" : "random";
 
     if (!name || !audioFile) {
       return new Response(
@@ -57,23 +62,27 @@ export default async (req: Request, context: Context) => {
     const demos: Demo[] = demosJson || [];
 
     // Create new demo
+    const newId = Date.now(); // keep numeric for now, but treat keys as strings
+    const newIdStr = String(newId);
     const newDemo: Demo = {
-      id: Date.now(),
+      id: newId,
       name: name,
       audioFile: audioFile.name,
-      coverUrl: coverUrl,
+      coverUrl: coverType === "random" ? coverUrl : null,
       coverType: coverType,
       uploadDate: new Date().toISOString(),
     };
 
     // Store audio file in blobs
     const audioBuffer = await audioFile.arrayBuffer();
-    await audioStore.set(`audio-${newDemo.id}`, audioBuffer);
+    const audioBlob = new Blob([audioBuffer], { type: audioFile.type || "audio/mpeg" });
+    await audioStore.set(`audio-${newIdStr}`, audioBlob);
 
     // Store cover file if uploaded
     if (coverFile) {
       const coverBuffer = await coverFile.arrayBuffer();
-      await audioStore.set(`cover-${newDemo.id}`, coverBuffer);
+      const coverBlob = new Blob([coverBuffer], { type: coverFile.type || "image/jpeg" });
+      await audioStore.set(`cover-${newIdStr}`, coverBlob);
     }
 
     // Add to demos list

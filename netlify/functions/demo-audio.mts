@@ -21,13 +21,15 @@ export default async (req: Request, context: Context) => {
     const audioStore = getStore("demo-audio");
     const key = type === "cover" ? `cover-${id}` : `audio-${id}`;
     
-    const blob = await audioStore.get(key, { type: "arrayBuffer" });
+    const blob = await audioStore.get(key, { type: "blob" });
 
     if (!blob) {
       return new Response("Not Found", { status: 404 });
     }
 
-    const contentType = type === "cover" ? "image/jpeg" : "audio/mpeg";
+    const contentType =
+      (blob as any)?.type ||
+      (type === "cover" ? "image/jpeg" : "audio/mpeg");
 
     return new Response(blob, {
       headers: {
