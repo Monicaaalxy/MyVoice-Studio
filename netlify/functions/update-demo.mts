@@ -72,9 +72,7 @@ export default async (req: Request, context: Context) => {
     // Store new cover file if uploaded
     if (coverFile) {
       const coverBuffer = await coverFile.arrayBuffer();
-      await audioStore.set(`cover-${id}`, coverBuffer, {
-        metadata: { contentType: coverFile.type || "image/jpeg" }
-      });
+      await audioStore.set(`cover-${id}`, coverBuffer);
       demos[index].coverType = "uploaded";
       demos[index].coverUrl = null;
     }

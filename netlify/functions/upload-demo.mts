@@ -68,16 +68,12 @@ export default async (req: Request, context: Context) => {
 
     // Store audio file in blobs
     const audioBuffer = await audioFile.arrayBuffer();
-    await audioStore.set(`audio-${newDemo.id}`, audioBuffer, {
-      metadata: { contentType: audioFile.type || "audio/mpeg" }
-    });
+    await audioStore.set(`audio-${newDemo.id}`, audioBuffer);
 
     // Store cover file if uploaded
     if (coverFile) {
       const coverBuffer = await coverFile.arrayBuffer();
-      await audioStore.set(`cover-${newDemo.id}`, coverBuffer, {
-        metadata: { contentType: coverFile.type || "image/jpeg" }
-      });
+      await audioStore.set(`cover-${newDemo.id}`, coverBuffer);
     }
 
     // Add to demos list
