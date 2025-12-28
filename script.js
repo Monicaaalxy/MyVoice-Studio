@@ -353,11 +353,20 @@ function routeFromLocation() {
 }
 
 // ===== Audio File Selection =====
+const MAX_AUDIO_SIZE_MB = 4; // Max 4MB to stay under Netlify's 6MB payload limit after base64
+
 function handleAudioSelect(e) {
     const file = e.target.files[0];
     if (file && file.type.includes('audio')) {
+        // Check file size
+        const fileSizeMB = file.size / (1024 * 1024);
+        if (fileSizeMB > MAX_AUDIO_SIZE_MB) {
+            alert(`Audio file is too large (${fileSizeMB.toFixed(1)}MB). Maximum size is ${MAX_AUDIO_SIZE_MB}MB. Please compress or trim your audio file.`);
+            e.target.value = '';
+            return;
+        }
         currentAudioFile = file;
-        document.getElementById('audioFileName').textContent = file.name;
+        document.getElementById('audioFileName').textContent = `${file.name} (${fileSizeMB.toFixed(1)}MB)`;
         document.getElementById('songName').value = file.name.replace(/\.[^/.]+$/, ''); // Remove extension
         openModal();
     } else {
@@ -370,7 +379,22 @@ function handleCoverSelect(e) {
     const file = e.target.files[0];
     if (file && file.type.includes('image')) {
         currentCoverFile = file;
-        alert('Cover image selected: ' + file.name);
+        // Show cover preview
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            const previewContainer = document.getElementById('coverPreview');
+            if (previewContainer) {
+                previewContainer.innerHTML = `<img src="${ev.target.result}" alt="Cover preview" style="width: 100%; max-width: 150px; border-radius: 12px; margin-top: 8px;">`;
+                previewContainer.style.display = 'block';
+            }
+        };
+        reader.readAsDataURL(file);
+        
+        // Update button text
+        const selectBtn = document.getElementById('selectCoverBtn');
+        if (selectBtn) {
+            selectBtn.textContent = 'Change Cover Image';
+        }
     }
 }
 
@@ -385,6 +409,16 @@ function closeModal() {
     currentCoverFile = null;
     document.getElementById('songName').value = '';
     document.getElementById('audioFileName').textContent = 'No file selected';
+    // Reset cover preview
+    const coverPreview = document.getElementById('coverPreview');
+    if (coverPreview) {
+        coverPreview.innerHTML = '';
+        coverPreview.style.display = 'none';
+    }
+    const selectBtn = document.getElementById('selectCoverBtn');
+    if (selectBtn) {
+        selectBtn.textContent = 'Select Cover Image';
+    }
 }
 
 // ===== Confirm Upload =====
@@ -406,20 +440,26 @@ async function confirmUpload() {
         return;
     }
     
-    // Convert files to base64 for API
-    const audioData = await fileToBase64(currentAudioFile);
-    let coverData = null;
-    let coverUrl = null;
-    let coverType = 'random';
-
-    if (currentCoverFile) {
-        coverData = await fileToBase64(currentCoverFile);
-        coverType = 'uploaded';
-    } else {
-        coverUrl = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
-    }
-
+    // Show loading state
+    const confirmBtn = document.getElementById('confirmUpload');
+    const originalText = confirmBtn.textContent;
+    confirmBtn.textContent = 'Uploading...';
+    confirmBtn.disabled = true;
+    
     try {
+        // Convert files to base64 for API
+        const audioData = await fileToBase64(currentAudioFile);
+        let coverData = null;
+        let coverUrl = null;
+        let coverType = 'random';
+
+        if (currentCoverFile) {
+            coverData = await fileToBase64(currentCoverFile);
+            coverType = 'uploaded';
+        } else {
+            coverUrl = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
+        }
+
         const res = await fetch('/api/demos', {
             method: 'POST',
             headers: {
@@ -439,8 +479,20 @@ async function confirmUpload() {
         });
 
         if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error || 'Upload failed');
+            let errorMsg = 'Upload failed';
+            try {
+                const err = await res.json();
+                errorMsg = err.error || errorMsg;
+            } catch {
+                // Response wasn't JSON, likely a server error
+                const text = await res.text();
+                if (text.includes('Too Large') || res.status === 413) {
+                    errorMsg = 'File too large. Please use an audio file under 4MB.';
+                } else {
+                    errorMsg = `Server error (${res.status}). Try a smaller file.`;
+                }
+            }
+            throw new Error(errorMsg);
         }
 
         const data = await res.json();
@@ -450,11 +502,14 @@ async function confirmUpload() {
     } catch (e) {
         console.error('Upload error:', e);
         alert('Failed to upload demo: ' + e.message);
+    } finally {
+        // Reset button state
+        confirmBtn.textContent = originalText;
+        confirmBtn.disabled = false;
+        // Reset file input
+        document.getElementById('uploadDemo').value = '';
+        document.getElementById('uploadCover').value = '';
     }
-    
-    // Reset file input
-    document.getElementById('uploadDemo').value = '';
-    document.getElementById('uploadCover').value = '';
 }
 
 // Helper to convert file to base64
