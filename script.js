@@ -439,117 +439,84 @@ async function confirmUpload() {
     confirmBtn.disabled = true;
     
     try {
-        // Netlify Functions have request body limits. For large files, upload in chunks.
-        const CHUNK_THRESHOLD = 5 * 1024 * 1024; // 5MB
+        // Always upload audio in chunks to avoid Netlify request-body limits that can surface as "Internal Error (500)".
         const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB
 
-        if (currentAudioFile.size > CHUNK_THRESHOLD) {
-            // 1) init demo (metadata + optional cover)
-            const initFd = new FormData();
-            initFd.append('name', songName);
-            initFd.append('audioFile', currentAudioFile.name);
+        // 1) init demo (metadata + optional cover)
+        const initFd = new FormData();
+        initFd.append('name', songName);
+        initFd.append('audioFile', currentAudioFile.name);
 
-            if (currentCoverFile) {
-                initFd.append('cover', currentCoverFile);
-                initFd.append('coverType', 'uploaded');
-            } else {
-                const randomCover = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
-                initFd.append('coverUrl', randomCover);
-                initFd.append('coverType', 'random');
-            }
-
-            const initRes = await fetch('/api/upload-demo-init', {
-                method: 'POST',
-                headers: { 'X-Owner-Password': ownerPassword },
-                body: initFd
-            });
-            if (!initRes.ok) {
-                const t = await initRes.text();
-                throw new Error(`Init upload failed (${initRes.status}): ${t.slice(0, 180)}`);
-            }
-            const initData = await initRes.json();
-            const demoId = initData?.demo?.id;
-            if (!demoId) throw new Error('Init upload failed: missing demo id');
-
-            // 2) upload audio chunks
-            const total = Math.ceil(currentAudioFile.size / CHUNK_SIZE);
-            for (let i = 0; i < total; i++) {
-                confirmBtn.textContent = `Uploading... (${i + 1}/${total})`;
-                const start = i * CHUNK_SIZE;
-                const end = Math.min(currentAudioFile.size, start + CHUNK_SIZE);
-                const chunkBlob = currentAudioFile.slice(start, end);
-
-                const chunkFd = new FormData();
-                chunkFd.append('id', String(demoId));
-                chunkFd.append('index', String(i));
-                chunkFd.append('total', String(total));
-                chunkFd.append('contentType', currentAudioFile.type || 'audio/mpeg');
-                chunkFd.append('chunk', chunkBlob, `chunk-${i}`);
-
-                const chunkRes = await fetch('/api/upload-audio-chunk', {
-                    method: 'POST',
-                    headers: { 'X-Owner-Password': ownerPassword },
-                    body: chunkFd
-                });
-                if (!chunkRes.ok) {
-                    const t = await chunkRes.text();
-                    throw new Error(`Chunk ${i + 1}/${total} failed (${chunkRes.status}): ${t.slice(0, 180)}`);
-                }
-            }
-
-            // 3) complete
-            confirmBtn.textContent = 'Finalizing...';
-            const completeRes = await fetch('/api/upload-audio-complete', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Owner-Password': ownerPassword
-                },
-                body: JSON.stringify({
-                    id: String(demoId),
-                    total,
-                    contentType: currentAudioFile.type || 'audio/mpeg'
-                })
-            });
-            if (!completeRes.ok) {
-                const t = await completeRes.text();
-                throw new Error(`Finalize failed (${completeRes.status}): ${t.slice(0, 180)}`);
-            }
-
-            await loadDemosFromAPI();
-            renderDemos();
-            closeModal();
+        if (currentCoverFile) {
+            initFd.append('cover', currentCoverFile);
+            initFd.append('coverType', 'uploaded');
         } else {
-            // Small file: single request
-            const formData = new FormData();
-            formData.append('name', songName);
-            formData.append('audio', currentAudioFile);
+            const randomCover = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
+            initFd.append('coverUrl', randomCover);
+            initFd.append('coverType', 'random');
+        }
 
-            if (currentCoverFile) {
-                formData.append('cover', currentCoverFile);
-                formData.append('coverType', 'uploaded');
-            } else {
-                const randomCover = pexelsImages[Math.floor(Math.random() * pexelsImages.length)];
-                formData.append('coverUrl', randomCover);
-                formData.append('coverType', 'random');
-            }
+        const initRes = await fetch('/api/upload-demo-init', {
+            method: 'POST',
+            headers: { 'X-Owner-Password': ownerPassword },
+            body: initFd
+        });
+        if (!initRes.ok) {
+            const t = await initRes.text();
+            throw new Error(`Init upload failed (${initRes.status}): ${t.slice(0, 180)}`);
+        }
+        const initData = await initRes.json();
+        const demoId = initData?.demo?.id;
+        if (!demoId) throw new Error('Init upload failed: missing demo id');
 
-            const res = await fetch('/api/upload-demo', {
+        // 2) upload audio chunks
+        const total = Math.ceil(currentAudioFile.size / CHUNK_SIZE);
+        for (let i = 0; i < total; i++) {
+            confirmBtn.textContent = `Uploading... (${i + 1}/${total})`;
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(currentAudioFile.size, start + CHUNK_SIZE);
+            const chunkBlob = currentAudioFile.slice(start, end);
+
+            const chunkFd = new FormData();
+            chunkFd.append('id', String(demoId));
+            chunkFd.append('index', String(i));
+            chunkFd.append('total', String(total));
+            chunkFd.append('contentType', currentAudioFile.type || 'audio/mpeg');
+            chunkFd.append('chunk', chunkBlob, `chunk-${i}`);
+
+            const chunkRes = await fetch('/api/upload-audio-chunk', {
                 method: 'POST',
                 headers: { 'X-Owner-Password': ownerPassword },
-                body: formData
+                body: chunkFd
             });
-
-            if (!res.ok) {
-                const text = await res.text();
-                throw new Error(`Upload failed (${res.status}): ${text.slice(0, 180)}`);
+            if (!chunkRes.ok) {
+                const t = await chunkRes.text();
+                throw new Error(`Chunk ${i + 1}/${total} failed (${chunkRes.status}): ${t.slice(0, 180)}`);
             }
-
-            const data = await res.json();
-            demos.unshift(data.demo);
-            renderDemos();
-            closeModal();
         }
+
+        // 3) complete
+        confirmBtn.textContent = 'Finalizing...';
+        const completeRes = await fetch('/api/upload-audio-complete', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Owner-Password': ownerPassword
+            },
+            body: JSON.stringify({
+                id: String(demoId),
+                total,
+                contentType: currentAudioFile.type || 'audio/mpeg'
+            })
+        });
+        if (!completeRes.ok) {
+            const t = await completeRes.text();
+            throw new Error(`Finalize failed (${completeRes.status}): ${t.slice(0, 180)}`);
+        }
+
+        await loadDemosFromAPI();
+        renderDemos();
+        closeModal();
     } catch (e) {
         console.error('Upload error:', e);
         alert('Failed to upload demo: ' + e.message);
