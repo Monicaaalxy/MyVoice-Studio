@@ -863,7 +863,11 @@ body.light-mode .player-ring-track {
 
 .player-cover-wrap {
     position: absolute;
-    inset: 22px;
+    left: 50%;
+    top: 50%;
+    width: calc(100% - 44px);
+    height: calc(100% - 44px);
+    transform: translate(-50%, -50%);
     border-radius: 50%;
     overflow: hidden;
     background: rgba(255, 255, 255, 0.08);
@@ -877,6 +881,7 @@ body.light-mode .player-ring-track {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    display: block;
     border-radius: 50%;
     transform: translateZ(0);
     transition: opacity 0.2s ease;
@@ -1254,8 +1259,8 @@ body.light-mode .modal-content-wide .modal-actions {
     
     /* Cover size on mobile */
     .player-cover-wrap {
-        width: 200px;
-        height: 200px;
+        width: calc(100% - 44px);
+        height: calc(100% - 44px);
     }
 }
 
