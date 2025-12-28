@@ -124,6 +124,11 @@ const pexelsImages = [
 
 // ===== Initialize App =====
 document.addEventListener('DOMContentLoaded', () => {
+    // Phones may still have an old PWA Service Worker installed from earlier versions.
+    // That can serve stale CSS/JS and make "light mode" look wrong. This app is web-only now,
+    // so we proactively unregister any SWs and clear old caches.
+    cleanupLegacyServiceWorkersAndCaches().catch(() => {});
+
     initializeApp();
     // Check if owner was previously logged in
     checkOwnerSession();
@@ -196,6 +201,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Player UI bindings (in-app Now Playing + mini player)
     bindPlayerUi();
 });
+
+async function cleanupLegacyServiceWorkersAndCaches() {
+    if (!('serviceWorker' in navigator)) return;
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+
+    if (!('caches' in window)) return;
+    const keys = await caches.keys();
+    const legacy = keys.filter((k) => k.startsWith('myvoice-studio'));
+    await Promise.all(legacy.map((k) => caches.delete(k)));
+}
 
 // ===== Initialize App =====
 function initializeApp() {
